@@ -1,0 +1,53 @@
+git config --list
+git config user.name
+git config user.email
+git config --global user.name "Damian"
+git config --global user.email "ssdr_liu@163.com"
+--global home dir setting
+--system git install dir
+
+git init
+git add
+git status
+git commit -m "message"
+
+git log
+git log --stat
+git log --stat --since=1.minute.ago
+
+git branch
+git branch feature1 HEAD~2
+git checkout feature1
+
+git clone url
+git push -u origin feature1
+
+git merge feature2
+
+people, orgs and teams
+
+git reset --hard HEAD~1
+git merge --squash feature1 //HEAD不变
+
+smartgit
+
+git bisect
+
+git reflog //仅记录本地log, e.g., reflog is forward moving
+git rebase -i HEAD~2
+
+
+git rebase master //看起来是顺序开发，其实是并行开发 0-1-。。。-master-bugFix
+
+git checkout master^ // the first parent of master
+git checkout master^^ // the grandparent of master
+
+git branch -f master HEAD~3 // move by force the master branch to three parents behind HEAD
+
+git reset HEAD 		//适用于本地修改，不影响远程代码
+git revert HEAD 	//影响远程，因为产生新的提交，该提交还原到上一次提交
+
+git cherry-pick <commit1> <commit2> <...> // 类似git rebase, 但cherry-pick可以选择某些提交，而不是全部
+git cherry-pick C2 C4
+
+git rebase -i ... // interactive rebase
