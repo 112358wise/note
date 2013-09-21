@@ -51,3 +51,5 @@ git cherry-pick <commit1> <commit2> <...> // 类似git rebase, 但cherry-pick可
 git cherry-pick C2 C4
 
 git rebase -i ... // interactive rebase
+git rebase -i HEAD~4 --aboveall
+
