@@ -12,3 +12,6 @@ memory
 
 segfault
 关于linux段错误
+
+ngx-open-file-cache
+nginx中文件cache相关解读
