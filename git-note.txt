@@ -53,3 +53,7 @@ git cherry-pick C2 C4
 git rebase -i ... // interactive rebase
 git rebase -i HEAD~4 --aboveall
 
+
+git pull = git fetch + git merge
+
+
