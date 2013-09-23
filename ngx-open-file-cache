@@ -1,0 +1,40 @@
+
+ngx_open_file_info_t
+记录打开文件信息fd, uniq, mtime, size, valid等
+
+ngx_cached_open_file_t
+已缓存的文件信息node, queue, name, created, accessed, fd, uniq, mtime, size, event等
+
+ngx_open_file_cache_t
+文件缓存信息rbtree, sentinel, expire_queue, current, max, inactive等
+current:当前缓存文件数量
+
+
+两个全局函数
+ngx_open_file_cache_init()
+文件缓存的内存分配，rbtree创建，超时队列初始化，内存池清理结构，从配置文件获取最大缓存文件数和超时时间等
+
+
+ngx_open_cached_file()
+首先在缓存中查找文件：ngx_open_file_lookup()
+如果文件在缓存中：
+	如果文件描述符失效(长时间没有使用)：
+		则重新打开文件：ngx_open_and_stat_file()
+		添加事件，更新文件，done
+	重新打开文件：ngx_open_and_stat_file()
+		如果文件改变，则更新文件，done------------？
+如果文件不在缓存中：
+	打开文件：ngx_open_and_stat_file()
+	创建缓存文件，并插入rbtree，添加事件，更新文件，done
+
+
+ngx_open_and_stat_file()
+如果文件描述符fd失效：
+	获取文件信息：ngx_file_info_wrapper()
+		如果文件唯一(st_ino不变)：ngx_file_uniq()
+			done
+重新打开文件：ngx_open_file_wrapper()
+
+
+ngx_expire_old_cached_files()
+当缓存中的文件数目多于最大文件数时(current>=max)，删除缓存中的一两个文件
