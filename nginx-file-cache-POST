@@ -1,0 +1,382 @@
+nginx文件cache详解
+
+Content
+0 序
+1 关于文件cache的配置
+2 文件cache相关数据结构
+3 代码解释
+4 参考资料
+
+
+0 序
+
+从nginx的源代码来看，与文件cache相关的源文件有两个：
+(1) ngx_open_file_cache.h
+	定义相关数据结构：ngx_open_file_info_t, ngx_cached_open_file_t, ngx_open_file_cache_t等;
+	声明两个全局函数：ngx_open_file_cache_init(), ngx_open_cached_file();
+(2) ngx_open_file_cache.c
+	文件cache相关函数的具体实现。
+
+
+1 关于文件cache的配置
+
+配置文件中有关文件cache最主要的配置指令是open_file_cache max = N [inactive=time] | off;
+文件缓存会在内存中存储一下三种信息：
+(1) 文件句柄fd，文件大小size和上次修改时间mtime;
+(2) 已经打开的目录结构;
+(3) 没有找到或没有权限操作的文件信息。
+这样，读取缓存可以减少对磁盘的操作。
+max：缓存中存储元素的最大个数
+inactive：在inactive指定的时间段内没有被访问过的元素将被淘汰
+off：关闭缓存功能
+
+
+2 文件cache相关数据结构
+
+文件cache模块主要有三个比较常用的数据结构，详解如下：
+(1) 打开的文件信息ngx_open_file_info_t
+typedef struct {
+    ngx_fd_t                 fd;		//文件描述符
+    ngx_file_uniq_t          uniq;		//inode编号
+    time_t                   mtime;		//上次修改时间
+    off_t                    size;
+    off_t                    fs_size;	//文件大小
+
+    off_t                    directio;
+    size_t                   read_ahead;
+    ngx_err_t                err;
+    char                    *failed;
+
+    time_t                   valid;
+    ngx_uint_t               min_uses;
+
+    //一些标志位...
+} ngx_open_file_info_t;
+(2) 已缓存的文件信息ngx_cached_open_file_t
+typedef struct ngx_cached_open_file_s  ngx_cached_open_file_t;
+struct ngx_cached_open_file_s {
+    ngx_rbtree_node_t        node;		//缓存文件在rbtree中对应的节点
+    ngx_queue_t              queue;		//
+
+    u_char                  *name;		//文件名
+    time_t                   created;	//文件创建时间
+    time_t                   accessed;	//文件上次访问时间
+
+    ngx_fd_t                 fd;		//文件描述符
+    ngx_file_uniq_t          uniq;		//inode编号
+    time_t                   mtime;		//上次修改时间
+    off_t                    size;		//文件大小
+    ngx_err_t                err;
+
+    uint32_t                 uses;
+    //一些标志位...
+
+    ngx_event_t             *event;
+};
+(3) 打开文件的缓存ngx_open_file_cache_t
+typedef struct {
+    ngx_rbtree_t             rbtree;		//管理缓存文件的rbtree
+    ngx_rbtree_node_t        sentinel;		//
+    ngx_queue_t              expire_queue;	//超时队列
+
+    ngx_uint_t               current;		//当前缓存文件数目
+    ngx_uint_t               max;			//最大缓存文件数目
+    time_t                   inactive;		//超时时间
+} ngx_open_file_cache_t;
+
+
+3 代码解释
+
+假设现在客户端请求是GET test.html HTTP/1.1 ,则nginx是这么处理的，如果test.html在cache中存在，则从cache中取得这个句柄，然后正常返回；如果test.html不存在，则是打开这个文件，然后插入到cache中。不过这里有很多细节都需要处理，比如超时，比如红黑树的插入等等。下面我们就对照代码来看这些都是如何处理的。
+
+文件cache模块包含两个全局函数供外部调用，它们是ngx_open_file_cache_init()和ngx_open_cached_file()。
+
+3.1 ngx_open_file_cache_init()
+
+该函数是文件cache模块的初始化函数，它在读取配置文件时被调用，以便于用配置参数初始化文件cache结构。
+ngx_open_file_cache_t *
+ngx_open_file_cache_init(ngx_pool_t *pool, ngx_uint_t max, time_t inactive)
+{
+    ngx_pool_cleanup_t     *cln;
+    ngx_open_file_cache_t  *cache;
+
+    cache = ngx_palloc(pool, sizeof(ngx_open_file_cache_t));	//为文件cache结构分配内存
+    if (cache == NULL) {
+        return NULL;
+    }
+
+    ngx_rbtree_init(&cache->rbtree, &cache->sentinel,
+                    ngx_open_file_cache_rbtree_insert_value);	//初始化红黑树，用于管理cache文件
+
+    ngx_queue_init(&cache->expire_queue);		//初始化超时队列
+
+    cache->current = 0;		//初始化cache结构，max和inactive来自配置文件
+    cache->max = max;
+    cache->inactive = inactive;
+
+    cln = ngx_pool_cleanup_add(pool, 0);
+    if (cln == NULL) {
+        return NULL;
+    }
+
+    cln->handler = ngx_open_file_cache_cleanup;
+    cln->data = cache;
+
+    return cache;
+}
+
+3.2 ngx_open_cached_file() *****
+
+该函数包含了文件cache模块的主要代码，主要流程如下：
+================
+在缓存中查找文件：ngx_open_file_lookup()
+如果文件在缓存中：
+	如果文件描述符失效(长时间没有使用)：
+		则重新打开文件：ngx_open_and_stat_file()
+		添加事件，更新文件，done
+	文件描述符有效并且文件未改变：
+		将文件插入超时队列，done
+	重新打开文件：ngx_open_and_stat_file()
+		如果文件改变，则更新文件，done
+如果文件不在缓存中：
+	打开文件：ngx_open_and_stat_file()
+	创建缓存文件，并插入rbtree，添加事件，更新文件，done
+================
+由于本函数较长，下面将分段进行解释。
+
+(1) 在缓存中查找文件。
+hash = ngx_crc32_long(name->data, name->len);	//计数hash值
+file = ngx_open_file_lookup(cache, name, hash);	//在红黑树中查找缓存文件
+
+(2) 如果缓存中存在该文件，并且由于某些原因（比如长时间没有使用该文件，缓存中文件已失效）导致文件描述符失效，则重新打开并获取文件信息，更新文件，返回。
+如果文件描述符有效，并且
+if (file) {	//文件在缓存中
+
+    file->uses++;
+    ngx_queue_remove(&file->queue);
+
+    if (file->fd == NGX_INVALID_FILE && file->err == 0 && !file->is_dir) {	//文件描述符无效
+
+        /* file was not used often enough to keep open */
+
+        rc = ngx_open_and_stat_file(name, of, pool->log);		//重新打开并获取文件信息
+
+        goto add_event;
+    }
+
+    if (file->use_event || (file->event == NULL
+                && (of->uniq == 0 || of->uniq == file->uniq)
+                && now - file->created < of->valid
+            ))											//文件描述符有效并且文件未修改
+    {
+        if (file->err == 0) {
+
+            of->fd = file->fd;
+            of->uniq = file->uniq;
+            of->mtime = file->mtime;
+            of->size = file->size;
+
+            of->is_dir = file->is_dir;
+            of->is_file = file->is_file;
+            of->is_link = file->is_link;
+            of->is_exec = file->is_exec;
+            of->is_directio = file->is_directio;
+
+            if (!file->is_dir) {
+                file->count++;
+                ngx_open_file_add_event(cache, file, of, pool->log);
+            }
+
+        } else {
+            of->err = file->err;
+            of->failed = ngx_open_file_n;
+        }
+
+        goto found;
+    }
+    
+(3) 如果文件已修改，则更新文件信息。
+of->fd = file->fd;
+of->uniq = file->uniq;
+
+rc = ngx_open_and_stat_file(name, of, pool->log);		//重新打开并获取文件信息
+
+if (of->is_dir) {
+
+    if (file->is_dir || file->err) {
+        goto update;
+    }
+
+    /* file became directory */
+
+} else if (of->err == 0) {  /* file */
+
+    if (file->is_dir || file->err) {
+        goto add_event;
+    }
+
+    if (of->uniq == file->uniq) {
+
+        if (file->event) {
+            file->use_event = 1;
+        }
+
+        of->is_directio = file->is_directio;
+
+        goto update;
+    }
+
+    /* file was changed */
+
+} else { /* error to cache */
+
+    if (file->err || file->is_dir) {
+        goto update;
+    }
+
+    /* file was removed, etc. */
+}
+
+(4) 如果缓存中不存在该文件，则打开该文件并获取文件信息，并保存到文件cache中。
+	/* not found */
+    rc = ngx_open_and_stat_file(name, of, pool->log);		//打开并获取文件信息
+
+create:		//创建缓存文件
+
+    file = ngx_alloc(sizeof(ngx_cached_open_file_t), pool->log);
+
+    file->name = ngx_alloc(name->len + 1, pool->log);
+
+    ngx_cpystrn(file->name, name->data, name->len + 1);
+
+    file->node.key = hash;
+
+    ngx_rbtree_insert(&cache->rbtree, &file->node);			//插入到文件cache中
+
+    cache->current++;
+
+    file->uses = 1;
+    file->count = 0;
+    file->use_event = 0;
+    file->event = NULL;
+
+add_event:	//添加事件
+
+    ngx_open_file_add_event(cache, file, of, pool->log);
+
+update:		//更新文件信息
+
+    file->fd = of->fd;
+    file->err = of->err;
+
+    if (of->err == 0) {
+        file->uniq = of->uniq;
+        file->mtime = of->mtime;
+        file->size = of->size;
+
+        file->close = 0;
+
+        file->is_dir = of->is_dir;
+        file->is_file = of->is_file;
+        file->is_link = of->is_link;
+        file->is_exec = of->is_exec;
+        file->is_directio = of->is_directio;
+
+        if (!of->is_dir) {
+            file->count++;
+        }
+    }
+
+    file->created = now;	//更新创建时间
+
+found:		//文件cache中找到该文件
+
+    file->accessed = now;	//更新访问时间
+
+    ngx_queue_insert_head(&cache->expire_queue, &file->queue);		//将该文件插入到超时队列中
+
+    if (of->err == 0) {
+
+        if (!of->is_dir) {
+            cln->handler = ngx_open_file_cleanup;	//绑定handler到request_pool上，处理超时，稍后详解
+            ofcln = cln->data;
+
+            ofcln->cache = cache;
+            ofcln->file = file;
+            ofcln->min_uses = of->min_uses;
+            ofcln->log = pool->log;
+        }
+
+        return NGX_OK;
+    }
+
+呼！这个函数真复杂，总算解释完了。下面是几个比较重要的局部函数。
+
+3.3 ngx_open_file_cleanup()
+
+我们已经知道文件cache中维护了一个超时队列expire_queue，每个请求访问的文件都会插入到超时队列中(当然，已经在超时队列中了就不必插入了)，经过我们设置的超时时间以后，文件cache中的文件将变成无效的。nginx并不使用inotify机制处理该超时事件，而是这样处理的：nginx在每个请求的请求内存池request_pool上绑定了clean_handler，在每个请求结束后，请求内存池被回收，相应的clean_handler被调用，此时，根据时间判断文件是否超时。这里的clean_handler就是ngx_open_file_cleanup()。
+static void
+ngx_open_file_cleanup(void *data)
+{
+    ngx_open_file_cache_cleanup_t  *c = data;
+
+    c->file->count--;
+
+    ngx_close_cached_file(c->cache, c->file, c->min_uses, c->log);	//关闭缓存文件
+
+    /* drop one or two expired open files */
+    ngx_expire_old_cached_files(c->cache, 1, c->log);		//从缓存中删除一两个超时文件
+}
+
+static void
+ngx_expire_old_cached_files(ngx_open_file_cache_t *cache, ngx_uint_t n,
+    ngx_log_t *log)
+{
+    time_t                   now;
+    ngx_queue_t             *q;
+    ngx_cached_open_file_t  *file;
+
+    now = ngx_time();
+
+    /*
+     * n == 1 deletes one or two inactive files
+     * n == 0 deletes least recently used file by force
+     *        and one or two inactive files
+     */
+
+    while (n < 3) {
+
+        if (ngx_queue_empty(&cache->expire_queue)) {
+            return;
+        }
+
+        q = ngx_queue_last(&cache->expire_queue);	//获取最长时间没有操作的文件
+
+        file = ngx_queue_data(q, ngx_cached_open_file_t, queue);
+
+        if (n++ != 0 && now - file->accessed <= cache->inactive) {	//只删除超时的文件
+            return;
+        }
+
+        ngx_queue_remove(q);								//从超时队列中删除
+
+        ngx_rbtree_delete(&cache->rbtree, &file->node);		//从文件cache中删除
+
+        cache->current--;
+
+        if (!file->err && !file->is_dir) {
+            file->close = 1;
+            ngx_close_cached_file(cache, file, 0, log);
+
+        } else {
+            ngx_free(file->name);
+            ngx_free(file);
+        }
+    }
+}
+
+
+4 参考资料
+
+(1) Nginx教程：nginx对静态文件cache的处理 http://down.chinaz.com/server/201112/1473_1.htm
+(2) 陶辉 <<深入理解Nginx>> 

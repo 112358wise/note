@@ -16,13 +16,15 @@ ngx_open_file_cache_init()
 
 
 ngx_open_cached_file()
-首先在缓存中查找文件：ngx_open_file_lookup()
+在缓存中查找文件：ngx_open_file_lookup()
 如果文件在缓存中：
 	如果文件描述符失效(长时间没有使用)：
 		则重新打开文件：ngx_open_and_stat_file()
 		添加事件，更新文件，done
+	文件描述符有效并且文件未改变：
+		将文件插入超时队列，done
 	重新打开文件：ngx_open_and_stat_file()
-		如果文件改变，则更新文件，done------------？
+		如果文件改变，则更新文件，done
 如果文件不在缓存中：
 	打开文件：ngx_open_and_stat_file()
 	创建缓存文件，并插入rbtree，添加事件，更新文件，done
@@ -35,6 +37,8 @@ ngx_open_and_stat_file()
 			done
 重新打开文件：ngx_open_file_wrapper()
 
+
+超时机制是如何实现的。在nginx中并没有通过定时器什么的来实现，而是通过nginx的一个特性，那就是每个request结束的时候，都会清理掉他所分配的pool，而nginx就是给每个有打开文件的request都绑定了对应clean handler，当request pool被释放的时候，就会来根据时间来判断是否已经超时,这里的clean handler就是ngx_open_file_cleanup。
 
 ngx_expire_old_cached_files()
 当缓存中的文件数目多于最大文件数时(current>=max)，删除缓存中的一两个文件
