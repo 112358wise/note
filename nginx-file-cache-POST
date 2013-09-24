@@ -5,7 +5,10 @@ Content
 1 关于文件cache的配置
 2 文件cache相关数据结构
 3 代码解释
-4 参考资料
+3.1 ngx_open_file_cache_init()
+3.2 ngx_open_cached_file() *****
+3.3 ngx_open_file_cleanup()
+
 
 
 0 序
@@ -101,9 +104,6 @@ ngx_open_file_cache_init(ngx_pool_t *pool, ngx_uint_t max, time_t inactive)
     ngx_open_file_cache_t  *cache;
 
     cache = ngx_palloc(pool, sizeof(ngx_open_file_cache_t));	//为文件cache结构分配内存
-    if (cache == NULL) {
-        return NULL;
-    }
 
     ngx_rbtree_init(&cache->rbtree, &cache->sentinel,
                     ngx_open_file_cache_rbtree_insert_value);	//初始化红黑树，用于管理cache文件
@@ -115,9 +115,6 @@ ngx_open_file_cache_init(ngx_pool_t *pool, ngx_uint_t max, time_t inactive)
     cache->inactive = inactive;
 
     cln = ngx_pool_cleanup_add(pool, 0);
-    if (cln == NULL) {
-        return NULL;
-    }
 
     cln->handler = ngx_open_file_cache_cleanup;
     cln->data = cache;
@@ -142,6 +139,7 @@ ngx_open_file_cache_init(ngx_pool_t *pool, ngx_uint_t max, time_t inactive)
 	打开文件：ngx_open_and_stat_file()
 	创建缓存文件，并插入rbtree，添加事件，更新文件，done
 ================
+
 由于本函数较长，下面将分段进行解释。
 
 (1) 在缓存中查找文件。
@@ -149,7 +147,7 @@ hash = ngx_crc32_long(name->data, name->len);	//计数hash值
 file = ngx_open_file_lookup(cache, name, hash);	//在红黑树中查找缓存文件
 
 (2) 如果缓存中存在该文件，并且由于某些原因（比如长时间没有使用该文件，缓存中文件已失效）导致文件描述符失效，则重新打开并获取文件信息，更新文件，返回。
-如果文件描述符有效，并且
+如果文件描述符有效，并且文件未修改，更新文件，返回。
 if (file) {	//文件在缓存中
 
     file->uses++;
@@ -251,7 +249,7 @@ create:		//创建缓存文件
 
     file->node.key = hash;
 
-    ngx_rbtree_insert(&cache->rbtree, &file->node);			//插入到文件cache中
+    ngx_rbtree_insert(&cache->rbtree, &file->node);			//保存到文件cache中
 
     cache->current++;
 
@@ -376,7 +374,9 @@ ngx_expire_old_cached_files(ngx_open_file_cache_t *cache, ngx_uint_t n,
 }
 
 
-4 参考资料
+参考资料
 
 (1) Nginx教程：nginx对静态文件cache的处理 http://down.chinaz.com/server/201112/1473_1.htm
 (2) 陶辉 <<深入理解Nginx>> 
+
+代码解释部分可能有一些我没解释清楚的地方，或者理解不准确的地方，欢迎批评指正！
