@@ -15,3 +15,6 @@ segfault
 
 ngx-open-file-cache
 nginx中文件cache相关解读
+
+nginx-file-cache-POST
+nginx文件cache详解，发布到宙斯系统
