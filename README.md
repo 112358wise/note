@@ -18,3 +18,7 @@ nginx中文件cache相关解读
 
 nginx-file-cache-POST
 nginx文件cache详解，发布到宙斯系统
+
+nginx-note
+nginx学习笔记：nginx压力测试webbench, ab等
+
