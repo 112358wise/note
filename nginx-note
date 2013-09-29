@@ -1,4 +1,5 @@
-使用webbench进行压力测试
+压力测试
+
 webbench -c 200 -t 60 http://down.chinaz.com/index.php
 -c 并发数
 -t 持续时间（秒）
@@ -8,10 +9,24 @@ ab [options] [http[s]://]hostname[:port]/path
 -n 请求数
 -c 并发数
 -t 持续时间
-
+=================
 
 事件模块
+事件处理框架所要解决的问题是如何收集、管理、分发事件，事件主要是网络事件和定时器事件。
+=================
 
+事件驱动机制/IO多路复用
+epoll机制
+epoll_create(): 产生一个epoll对象，返回指向该epoll对象的文件描述符
+epoll_ctl(): 将感兴趣的文件描述符注册到epoll对象
+epoll_wait(): 等待事件发生
+
+调用epoll_create建立一个epoll对象（在epoll文件系统中给这个句柄分配资源）、调用epoll_ctl向epoll对象中添加这100万个连接的套接字、调用epoll_wait收集发生事件的连接。
+
+调用epoll_create方法，linux内核会创建一个eventpoll结构体，包含两个成员双向链表rdllist和红黑树根节点rbr。rdllist保存通过epoll_wait返回给用户的满足条件的事件，rbr存储所有通过epoll_ctl添加到epoll中的事件。在epool中，对于每一个事件都会建立一个epitem结构体，rdllist和rbr就是基于epitem中的rdllink和rbn成员组织的。
+==================
+
+ngx_events_module
 nginx把不同操作系统的IO模型抽象封装成ngx_event_module_t.actions中指定的钩子。
 typedef struct {
     ngx_int_t  (*add)(ngx_event_t *ev, ngx_int_t event, ngx_uint_t flags);
@@ -40,14 +55,10 @@ typedef struct {
     ngx_event_actions_t     actions;
 } ngx_event_module_t;
 
-worker 初始化的时候会调用actions.init钩子初始化IO模型，比如在epoll的init钩子会创建epoll句柄和事件队列；之后worker就可 以在监听套接口上添加对连接建立状态的监听事件，调用accept获取已连接套接口，在已连接套接口上添加对读写操作的监听事件，nginx会调用 actions.process_events钩子轮询和处理事件，轮询有超时设定。
+worker 初始化的时候会调用actions.init钩子初始化IO模型，比如在epoll的init钩子会创建epoll句柄和事件队列；之后worker就可以在监听套接口上添加对连接建立状态的监听事件，调用accept获取已连接套接口，在已连接套接口上添加对读写操作的监听事件，nginx会调用 actions.process_events钩子轮询和处理事件，轮询有超时设定。
 
-epoll机制
-epoll_create(): 产生一个epoll对象，返回指向该epoll对象的文件描述符
-epoll_ctl(): 将感兴趣的文件描述符注册到epoll对象
-epoll_wait(): 等待事件发生
+ngx_event_core_module
+决定使用哪种事件驱动机制，以及如何管理事件。
 
-调用epoll_create建立一个epoll对象（在epoll文件系统中给这个句柄分配资源）、调用epoll_ctl向epoll对象中添加这100万个连接的套接字、调用epoll_wait收集发生事件的连接。
-
-调用epoll_create方法，linux内核会创建一个eventpoll结构体，包含两个成员双向链表rdllist和红黑树根节点rbr。rdllist保存通过epoll_wait返回给用户的满足条件的事件，rbr存储所有通过epoll_ctl添加到epoll中的事件。在epool中，对于每一个事件都会建立一个epitem结构体，rdllist和rbr就是基于epitem中的rdllink和rbn成员组织的。
+==================
 
