@@ -1,9 +1,5 @@
-gitnote
-=======
-
-This is a note for learning GIT.
-
-=======
+note
+=========
 git-note
 git相关命令
 
@@ -21,4 +17,6 @@ nginx文件cache详解，发布到宙斯系统
 
 nginx-note
 nginx学习笔记：nginx压力测试webbench, ab等
+epoll机制
+nginx事件机制
 
