@@ -1,4 +1,4 @@
-git config --list
+﻿git config --list
 git config user.name
 git config user.email
 git config --global user.name "Damian"
@@ -55,5 +55,25 @@ git rebase -i HEAD~4 --aboveall
 
 
 git pull = git fetch + git merge
+
+
+git remote
+
+将工作目录迁移到github
+git remote add github https://github.com/ssdr/note.git
+git push github --all --tags
+
+显示所有的远程仓库
+git remote -v
+
+git remote rename github gh
+
+git remote rm github
+
+从远程仓库抓取数据更新本地仓库
+git fetch origin
+
+查看远程仓库信息，可用于跟踪别人的push
+git remote show origin
 
 
