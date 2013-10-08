@@ -20,3 +20,5 @@ nginx学习笔记：nginx压力测试webbench, ab等
 epoll机制
 nginx事件机制
 
+linux-note
+关于linux命令find
