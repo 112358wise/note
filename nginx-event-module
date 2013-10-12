@@ -1,16 +1,4 @@
-压力测试
-
-webbench -c 200 -t 60 http://down.chinaz.com/index.php
--c 并发数
--t 持续时间（秒）
-
-ab stands for apache bench
-ab [options] [http[s]://]hostname[:port]/path
--n 请求数
--c 并发数
--t 持续时间
-=================
-
+﻿
 事件模块
 事件处理框架所要解决的问题是如何收集、管理、分发事件，事件主要是网络事件和定时器事件。
 =================
@@ -144,7 +132,7 @@ ngx_event_process_init(ngx_cycle_t *cycle)
     ngx_uint_t           m, i, j;
     ngx_event_t         *rev, *wev;
     ngx_listening_t     *ls;
-    ngx_connection_t    *c, *next, *old;
+    ngx_connection_t    *c, *next;
     ngx_core_conf_t     *ccf;
     ngx_event_conf_t    *ecf;
     ngx_event_module_t  *module;
@@ -152,6 +140,7 @@ ngx_event_process_init(ngx_cycle_t *cycle)
     ccf = (ngx_core_conf_t *) ngx_get_conf(cycle->conf_ctx, ngx_core_module);
     ecf = ngx_event_get_conf(cycle->conf_ctx, ngx_event_core_module);
 
+    // 负载均衡锁
     if (ccf->master && ccf->worker_processes > 1 && ecf->accept_mutex) {
         ngx_use_accept_mutex = 1;
         ngx_accept_mutex_held = 0;
@@ -161,20 +150,12 @@ ngx_event_process_init(ngx_cycle_t *cycle)
         ngx_use_accept_mutex = 0;
     }
 
-#if (NGX_THREADS)
-    ngx_posted_events_mutex = ngx_mutex_init(cycle->log, 0);
-    if (ngx_posted_events_mutex == NULL) {
-        return NGX_ERROR;
-    }
-#endif
-
+    // 初始化定时器
     if (ngx_event_timer_init(cycle->log) == NGX_ERROR) {
         return NGX_ERROR;
     }
 
-    //add by yimin
-    module = NULL;
-    //end
+    // 调用use配置项指定的事件驱动模块的init方法，进行事件模块的初始化
     for (m = 0; ngx_modules[m]; m++) {
         if (ngx_modules[m]->type != NGX_EVENT_MODULE) {
             continue;
@@ -196,6 +177,7 @@ ngx_event_process_init(ngx_cycle_t *cycle)
 
 #if !(NGX_WIN32)
 
+    // 设置时间精度
     if (ngx_timer_resolution && !(ngx_event_flags & NGX_USE_TIMER_EVENT)) {
         struct sigaction  sa;
         struct itimerval  itv;
@@ -205,8 +187,6 @@ ngx_event_process_init(ngx_cycle_t *cycle)
         sigemptyset(&sa.sa_mask);
 
         if (sigaction(SIGALRM, &sa, NULL) == -1) {
-            ngx_log_error(NGX_LOG_ALERT, cycle->log, ngx_errno,
-                          "sigaction(SIGALRM) failed");
             return NGX_ERROR;
         }
 
@@ -215,18 +195,14 @@ ngx_event_process_init(ngx_cycle_t *cycle)
         itv.it_value.tv_sec = ngx_timer_resolution / 1000;
         itv.it_value.tv_usec = (ngx_timer_resolution % 1000 ) * 1000;
 
-        if (setitimer(ITIMER_REAL, &itv, NULL) == -1) {
-            ngx_log_error(NGX_LOG_ALERT, cycle->log, ngx_errno,
-                          "setitimer() failed");
-        }
+        setitimer(ITIMER_REAL, &itv, NULL);
     }
 
+    // 为ngx_cycle_t结构的files成员分配空间
     if (ngx_event_flags & NGX_USE_FD_EVENT) {
         struct rlimit  rlmt;
 
         if (getrlimit(RLIMIT_NOFILE, &rlmt) == -1) {
-            ngx_log_error(NGX_LOG_ALERT, cycle->log, ngx_errno,
-                          "getrlimit(RLIMIT_NOFILE) failed");
             return NGX_ERROR;
         }
 
@@ -234,56 +210,39 @@ ngx_event_process_init(ngx_cycle_t *cycle)
 
         cycle->files = ngx_calloc(sizeof(ngx_connection_t *) * cycle->files_n,
                                   cycle->log);
-        if (cycle->files == NULL) {
-            return NGX_ERROR;
-        }
     }
 
 #endif
 
+    // 预分配连接池
     cycle->connections =
         ngx_alloc(sizeof(ngx_connection_t) * cycle->connection_n, cycle->log);
-    if (cycle->connections == NULL) {
-        return NGX_ERROR;
-    }
 
     c = cycle->connections;
 
+    // 预分配读事件池
     cycle->read_events = ngx_alloc(sizeof(ngx_event_t) * cycle->connection_n,
                                    cycle->log);
-
-    if (cycle->read_events == NULL) {
-        return NGX_ERROR;
-    }
 
     rev = cycle->read_events;
     for (i = 0; i < cycle->connection_n; i++) {
         rev[i].closed = 1;
         rev[i].instance = 1;
-#if (NGX_THREADS)
-        rev[i].lock = &c[i].lock;
-        rev[i].own_lock = &c[i].lock;
-#endif
     }
 
+    // 预分配写事件池
     cycle->write_events = ngx_alloc(sizeof(ngx_event_t) * cycle->connection_n,
                                     cycle->log);
-    if (cycle->write_events == NULL) {
-        return NGX_ERROR;
-    }
 
     wev = cycle->write_events;
     for (i = 0; i < cycle->connection_n; i++) {
         wev[i].closed = 1;
-#if (NGX_THREADS)
-        wev[i].lock = &c[i].lock;
-        wev[i].own_lock = &c[i].lock;
-#endif
     }
 
+    // 按照序号，将三个数组（连接池、读事件池和写事件池）对应的读写事件
+    // 设置到每一个ngx_connection_t连接对象中，并将连接对象的data成员作为next指针串联成链表
     i = cycle->connection_n;
     next = NULL;
-
     do {
         i--;
 
@@ -293,104 +252,16 @@ ngx_event_process_init(ngx_cycle_t *cycle)
         c[i].fd = (ngx_socket_t) -1;
 
         next = &c[i];
-
-#if (NGX_THREADS)
-        c[i].lock = 0;
-#endif
     } while (i);
 
     cycle->free_connections = next;
     cycle->free_connection_n = cycle->connection_n;
 
-    //add by yimin
-    //如果发现所选择的事件模块不支持inotify相关操作，直接退出
-    if (module->actions.add_intf == NULL)  {
-        return NGX_ERROR;
-    }
-    
-    //分配并初始化ngx_cycle_t中的inotifys数组
-    cycle->inotifys = 
-        ngx_alloc(sizeof(ngx_inotify_t) * ecf->channel_num, cycle->log);
-    
-    if (cycle->inotifys == NULL)  {
-        return NGX_ERROR;
-    }   
-
-    ngx_memzero(cycle->inotifys, sizeof(ngx_inotify_t) * ecf->channel_num);
-
-    // modified by liuyan...
-    cycle->intf_num = ecf->channel_num;
-    for(i = 0; i < ecf->channel_num; i++)
-    {
-        cycle->inotifys[i].log = cycle->log;
-        ngx_queue_init(&cycle->inotifys[i].waitq_head);
-
-        cycle->inotifys[i].name = ecf->channel_names[i];
-        cycle->inotifys[i].dir = ecf->channel_dirs[i];
-        cycle->inotifys[i].head = ecf->channel_heads[i]; 
-        cycle->inotifys[i].flv_ts_file_name = ecf->flv_ts_file_names[i];
-
-        // 预分配头文件缓存空间
-        cycle->inotifys[i].head_file = ngx_alloc(sizeof(ngx_file_t), cycle->log);
-        if (NULL == cycle->inotifys[i].head_file) {
-            return NGX_ERROR;
-        }
-        ngx_memzero(cycle->inotifys[i].head_file, sizeof(ngx_file_t));
-        cycle->inotifys[i].head_file->fd = NGX_INVALID_FILE;
-        
-        // modified by qiuzl
-        ngx_queue_init(&cycle->inotifys[i].cur_files);
-        cycle->inotifys[i].resv_num = ecf->channel_files_num;
-    }
-    // end
-
-    //add by qiuzl
-    cycle->channel_ratio = ngx_alloc(sizeof(ngx_int_t) * ecf->channel_files_num, cycle->log);
-    
-    if (cycle->channel_ratio == NULL)  {
-        return NGX_ERROR;
-    }   
-    ngx_memzero(cycle->channel_ratio, sizeof(ngx_int_t) * ecf->channel_files_num);
-    
-    for (i = 0; i < ecf->channel_files_num; i++) {
-        cycle->channel_ratio[i] = ecf->channel_ratio[i];
-    }
-    //end
-
-    //add by yimin for init wrappers
-    //分配connection结构对应的wrapper数组，并初始化
-    cycle->connection_wrappers = ngx_alloc(sizeof(ngx_data_wrapper_t) * cycle->connection_n, 
-                                           cycle->log);
-    if (cycle->connection_wrappers == NULL)  {
-        return NGX_ERROR;
-    }
-    for (i = 0 ; i < cycle->connection_n ; i++) {
-        cycle->connection_wrappers[i].data_ptr = (void *)&cycle->connections[i];
-        cycle->connection_wrappers[i].data_type = NGX_CONNECTION_DATA_TYPE;
-        cycle->connections[i].wrapper = &cycle->connection_wrappers[i]; 
-    }
-    //分配inotifys结构对应的wrapper数组，并初始化
-    cycle->inotify_wrappers = ngx_alloc(sizeof(ngx_data_wrapper_t) * ecf->channel_num, cycle->log);
-    if (cycle->inotify_wrappers == NULL) {
-        return NGX_ERROR;
-    }
-    for (i = 0 ; i < ecf->channel_num ; i++) {
-        cycle->inotify_wrappers[i].data_ptr = (void *)&cycle->inotifys[i];
-        cycle->inotify_wrappers[i].data_type = NGX_INOTIFY_DATA_TYPE;
-        cycle->inotifys[i].wrapper = &cycle->inotify_wrappers[i];
-    }
-    //end
-
-    /* for each listening socket */
-
+    // 为所有ngx_listening_t监听对象中的connection成员分配连接
     ls = cycle->listening.elts;
     for (i = 0; i < cycle->listening.nelts; i++) {
 
         c = ngx_get_connection(ls[i].fd, cycle->log);
-
-        if (c == NULL) {
-            return NGX_ERROR;
-        }
 
         c->log = &ls[i].log;
 
@@ -402,74 +273,15 @@ ngx_event_process_init(ngx_cycle_t *cycle)
         rev->log = c->log;
         rev->accept = 1;
 
-#if (NGX_HAVE_DEFERRED_ACCEPT)
-        rev->deferred_accept = ls[i].deferred_accept;
-#endif
-
-        if (!(ngx_event_flags & NGX_USE_IOCP_EVENT)) {
-            if (ls[i].previous) {
-
-                /*
-                 * delete the old accept events that were bound to
-                 * the old cycle read events array
-                 */
-
-                old = ls[i].previous->connection;
-
-                if (ngx_del_event(old->read, NGX_READ_EVENT, NGX_CLOSE_EVENT)
-                    == NGX_ERROR)
-                {
-                    return NGX_ERROR;
-                }
-
-                old->fd = (ngx_socket_t) -1;
-            }
-        }
-
-#if (NGX_WIN32)
-
-        if (ngx_event_flags & NGX_USE_IOCP_EVENT) {
-            ngx_iocp_conf_t  *iocpcf;
-
-            rev->handler = ngx_event_acceptex;
-
-            if (ngx_use_accept_mutex) {
-                continue;
-            }
-
-            if (ngx_add_event(rev, 0, NGX_IOCP_ACCEPT) == NGX_ERROR) {
-                return NGX_ERROR;
-            }
-
-            ls[i].log.handler = ngx_acceptex_log_error;
-
-            iocpcf = ngx_event_get_conf(cycle->conf_ctx, ngx_iocp_module);
-            if (ngx_event_post_acceptex(&ls[i], iocpcf->post_acceptex)
-                == NGX_ERROR)
-            {
-                return NGX_ERROR;
-            }
-
-        } else {
-            rev->handler = ngx_event_accept;
-
-            if (ngx_use_accept_mutex) {
-                continue;
-            }
-
-            if (ngx_add_event(rev, NGX_READ_EVENT, 0) == NGX_ERROR) {
-                return NGX_ERROR;
-            }
-        }
-
-#else
-
-        rev->handler = ngx_event_accept;
+        // 对监听端口的读事件设置处理方法为ngx_event_accept
+        // 即在有新连接事件时，调用ngx_event_accept方法建立新连接
+        rev->handler = ngx_event_accept; 
 
         if (ngx_use_accept_mutex) {
             continue;
         }
 
+        // 将监听对象连接的读事件添加到事件驱动模块
         if (ngx_event_flags & NGX_USE_RTSIG_EVENT) {
             if (ngx_add_conn(c) == NGX_ERROR) {
                 return NGX_ERROR;
@@ -480,8 +292,6 @@ ngx_event_process_init(ngx_cycle_t *cycle)
                 return NGX_ERROR;
             }
         }
-
-#endif
 
     }
 
