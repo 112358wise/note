@@ -15,10 +15,12 @@ nginx中文件cache相关解读
 nginx-file-cache-POST
 nginx文件cache详解，发布到宙斯系统
 
-nginx-note
-nginx学习笔记：nginx压力测试webbench, ab等
+web-note
+压力测试webbench, ab等
+
+nginx-event-module
 epoll机制
 nginx事件机制
 
-linux-note
+linux-command-note
 关于linux命令find
