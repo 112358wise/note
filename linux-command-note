@@ -1,3 +1,60 @@
+﻿=====================
+
+grep
+uptime
+top
+wc
+find
+
+=====================
+grep命令
+文本搜索
+grep （global search regular expression(RE) and print out the line,全面搜索正则表达式并把行打印出来）是一种强大的文本搜索工具，它能使用正则表达式搜索文本，并把匹配的行打印出来。
+grep可用于shell脚本，因为grep通过返回一个状态值来说明搜索的状态，如果模板搜索成功，则返回0，如果搜索不成功，则返回1，如果搜索的文件不存在，则返回2。我们利用这些返回值就可进行一些自动化的文本处理工作。
+grep [options] PATTERN [FILE...]
+
+部分参数
+-c,--count
+只打印匹配的行数，不显示匹配的内容。
+
+-q，--quiet
+取消显示，只返回退出状态。0则表示找到了匹配的行。
+
+-l，--files-with-matches
+打印匹配模板的文件清单。
+
+-n，--line-number
+在匹配的行前面打印行号。
+
+-s，--silent
+不显示关于不存在或者无法读取文件的错误信息。
+
+-v，--revert-match
+反检索，只显示不匹配的行。
+
+-R, -r, --recursive
+搜索子目录。
+
+示例
+$ ls -l | grep '^a'
+通过管道过滤ls -l输出的内容，只显示以a开头的行。
+
+$ grep 'test' d*
+显示所有以d开头的文件中包含test的行。
+
+$ grep 'test' aa bb cc
+显示在aa，bb，cc文件中匹配test的行。
+
+=====================
+uptime,top命令
+load average
+判断一个系统的负载可以使用top，uptime等命令去查看，它分别记录了一分钟、五分钟、以及十五分钟的系统平均负载。
+获取你系统上的每个处理器的信息。如果你只想得到数字，那么就使用下面的命令：
+grep ‘model name’ /proc/cpuinfo | wc -l
+
+wc命令
+显示文件的行数、word数以及字节数
+======================
 find命令
 
 1, 用文件名查找文件, 在当前目录及其子目录
@@ -66,3 +123,4 @@ find -name "*.txt" 2>>/dev/null
 
 17，将文件名中的空格换成下划线
 find . -type f -iname “*.mp3″ -exec rename “s/ /_/g” {} \;
+
