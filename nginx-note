@@ -1,0 +1,11 @@
+默认情况下，access_log 会使用 combined 的配置来记录访问日志
+
+log_format combined '$remote_addr - $remote_user [$time_local]  '
+           '"$request" $status $body_bytes_sent '
+           '"$http_referer" "$http_user_agent"';
+
+日志通过^A分割
+log_format abc "$remote_addr^A$remote_user^A$time_local^A$request_method^A$uri^A$args^A$server_protocol"
+        "^A$status^A$body_bytes_sent^A$http_referer"
+        "^A$http_user_agent";
+
