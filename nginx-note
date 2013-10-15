@@ -1,3 +1,7 @@
+nginx日志
+
+ngx_http_log_module用于记录HTTP请求的访问日志。
+
 默认情况下，access_log 会使用 combined 的配置来记录访问日志
 
 log_format combined '$remote_addr - $remote_user [$time_local]  '
@@ -9,3 +13,4 @@ log_format abc "$remote_addr^A$remote_user^A$time_local^A$request_method^A$uri^A
         "^A$status^A$body_bytes_sent^A$http_referer"
         "^A$http_user_agent";
 
+ngx_errlog_module为其他模块提供基本的记录日志功能。
