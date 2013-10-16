@@ -51,10 +51,12 @@ nginx的命令行控制
 等同于kill -s SIGHUP master-pid
 
 日志文件回滚
+先重命名或转移日志文件，然后-s reopen日志将打入新的日志文件
 ./nginx -s reopen
-等同于kill -s SIGUSER1 master-pid
+等同于kill -s SIGUSR1 master-pid
 
 平滑升级nginx
-kill -s SIGUSER2 master-pid-old
-./nginx-new
-kill -s SIGQUIT master-pid-old
+新版本替换旧版本二进制文件
+kill -s SIGUSR2 master-pid-old #新旧版本同时运行
+kill -s SIGQUIT master-pid-old #优雅关闭旧版本
+================================================
