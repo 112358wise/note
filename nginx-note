@@ -14,3 +14,47 @@ log_format abc "$remote_addr^A$remote_user^A$time_local^A$request_method^A$uri^A
         "^A$http_user_agent";
 
 ngx_errlog_module为其他模块提供基本的记录日志功能。
+=============================================================
+
+nginx的命令行控制
+
+启动时另行指定配置文件
+./nginx -c nginx.conf
+
+启动时另行指定安装目录
+./nginx -p /usr/local/nginx/
+
+测试配置信息是否有错误
+./nginx -t
+
+显示nginx版本信息
+./nginx -v
+
+显示编译阶段的参数
+./nginx -V
+
+快速停止服务: 向master进程发送TERM信号
+./nginx -s stop
+等同于kill -s SIGTERM master-pid / kill -s SIGINT master-pid
+
+优雅的停止服务: 向master进程发送QUIT信号
+./nginx -s quit
+等同于kill -s SIGQUIT master-pid
+优雅停止worker进程kill -s SIGWINCH worker-pid
+
+快速与优雅的区别：
+快速：worker进程和master进程在收到信号后会立即跳出循环，退出进程；
+优雅：先关闭监听端口，停止接收新的连接，然后把当前正在处理的连接全部处理完，最后在退出进程。
+
+使运行中的nginx重读配置项并生效
+./nginx -s reload
+等同于kill -s SIGHUP master-pid
+
+日志文件回滚
+./nginx -s reopen
+等同于kill -s SIGUSER1 master-pid
+
+平滑升级nginx
+kill -s SIGUSER2 master-pid-old
+./nginx-new
+kill -s SIGQUIT master-pid-old
