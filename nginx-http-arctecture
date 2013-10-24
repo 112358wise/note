@@ -1,7 +1,22 @@
 
 http框架大致由一个核心模块(ngx_http_module)、两个http模块(ngx_http_core_module、ngx_http_upstream_module)组成，它将负责调度其他http模块来一起处理用户请求。
 
-
+http框架的初始化流程：
+初始化所有http模块的ctx_index序号
+分配解析main级别配置项时存放http模块结构体指针的3个数组
+调用所有http模块的create_main_conf方法
+调用所有http模块的create_srv_conf方法
+调用所有http模块的create_loc_conf方法
+调用所有http模块的preconfigureation方法
+解析所有main级别配置项
+调用所有http模块的init_main_conf方法
+合并server、location相关配置项
+构造location组成的静态二叉平衡查找树
+初始化可添加处理方法的7个http阶段的动态数组
+调用所有http模块的postconfiguration方法使之可以介入http阶段
+构造phase_engine handlers数组
+构造server虚拟主机构成的支持通配符的散列表
+构造监听端口与server间的关联关系，设置新连接事件的回调函数
 
 
 
