@@ -1,0 +1,58 @@
+
+analysis and tools:
+
+strace
+netstat
+perf
+dtrace
+stap
+iotop
+blktrace
+top
+pidstat
+mpstat
+dstat
+vmstat
+ping
+tcpdump
+ip
+nicstat
+slabtop
+free
+sar
+/proc
+=================================
+basic tools:
+
+uptime: show load averages(1min, 5mins, 15mins), no more than cpu count
+top: system-wide and per-process summaries
+mpstat: check for hot threads, unbalanced workoads - mpstat -P ALL 1
+iostat: disk io statistics - iostat -xkdz 1
+vmstat: virtual memory statistics - vmstat 1
+free: memory usage summary(KB)
+ping: measure network latency
+dstat: better vmstat, coloring
+=================================
+intermediate tools:
+
+sar: system activity reporter - pageing -B; block device -d; run queue -q
+netstat: various network protocol statistics using -s
+pidstat: very useful process breakdowns: pidstat -d l disk io
+strace: system call tracer - strace -tttT -p pid
+	"high application latency often caused by resource io, and most resource io is performed by syscalls"
+tcpdump: sniff network packets, dump to output files
+	tcpdump -i eth4 -w /tmp/out.tcpdump	#写入临时文件
+	tcpdump -nr /tmp/out.tcpdump		#读取临时文件
+blktrace: block device io event tracing
+iotop: disk io by process - iotop -bod5
+slabtop: kernel slab allocator usage top - slabtop -sc shows where kerrnel momory is consumed
+sysctl: system settings
+/proc: read statistic sources directly
+=================================
+advanced tools:
+
+perf: performance counters - perf stat gzip file1
+dtrace: programmable, real-time, dynamic and static tracing
+	dtrace -n 'provider:module:function:name /predicate/ {action}'
+		    probe description               filter
+systemtap: static and dynamic tracing, probes, tapsets, scripts,...
