@@ -1,4 +1,16 @@
-﻿=====================
+﻿
+sudo!!
+python -m SimpleHTTPServer
+mtr = ping + traceroute
+nl readme.txt
+ls | shuf
+ss: socket统计
+last
+curl ifconfig.me :外部ip地址
+tree
+pstree
+
+=====================
 
 crontab -e
 grep
